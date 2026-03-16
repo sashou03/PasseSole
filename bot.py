@@ -9,8 +9,8 @@ intents = discord.Intents.default()
 intents.message_content = True  # Requis pour lire le contenu des commandes
 intents.members = True          # Requis pour pouvoir interagir directement avec les joueurs (DM)
 
-# Définition du préfixe des commandes (ici '/')
-bot = commands.Bot(command_prefix='/', intents=intents)
+# Définition du préfixe des commandes (ici '!')
+bot = commands.Bot(command_prefix='!', intents=intents)
 
 # --- ETAT DE LA PARTIE ---
 class GameState:
@@ -64,13 +64,13 @@ async def assign_new_mission(channel=None):
     if target_channel:
         await target_channel.send(f"🎯 **Une nouvelle mission** a été attribuée à un joueur mystère... Il a le temps ! 10 minutes top chrono !")
 
-    # 3. Envoyer la mission en message privé (DM) pour qu’elle reste secrète
+    # 3. Envoyer la mission en message privé (DM) pour qu'elle reste secrète
     try:
         await game.current_player.send(
             f"🕵️ **NOUVELLE MISSION SECRÈTE** 🕵️\n"
             f"Votre mission : **{game.current_mission}**\n\n"
             f"⏳ Vous avez **10 minutes** pour l'accomplir **discrètement** dans la vraie vie.\n"
-            f"Dès que vous avez réussi, tapez `/mission_reussie` dans le serveur !"
+            f"Dès que vous avez réussi, tapez `!mission_reussie` dans le serveur !"
         )
     except discord.Forbidden:
         if target_channel:
@@ -101,7 +101,7 @@ async def mission_timer(channel):
             await assign_new_mission(channel=channel)
             
     except asyncio.CancelledError:
-        # La tâche est annulée (par exemple quand on utilise /stop_mission ou quand quelqu'un réussit la sienne)
+        # La tâche est annulée (par exemple quand on utilise !stop_mission ou quand quelqu'un réussit la sienne)
         pass
 
 # --- ÉVÉNEMENTS DISCORD ---
@@ -115,7 +115,7 @@ async def on_ready():
 
 @bot.command()
 async def creer_partie(ctx):
-    """Commande : /creer_partie -> Initialise une partie et donne les droits de créateur."""
+    """Commande : !creer_partie -> Initialise une partie et donne les droits de créateur."""
     if game.creator is not None:
         await ctx.send("❌ Une partie a déjà été créée ! Terminez-la d'abord.")
         return
@@ -128,15 +128,15 @@ async def creer_partie(ctx):
     await ctx.send(
         f"🎮 **Nouvelle partie de Passe Solé créée !**\n"
         f"👑 {ctx.author.mention} est l'administrateur de la partie.\n"
-        f"👉 Rejoignez avec `/join`.\n"
-        f"👉 L'administrateur lance la partie avec `/start`."
+        f"👉 Rejoignez avec `!join`.\n"
+        f"👉 L'administrateur lance la partie avec `!start`."
     )
 
 @bot.command()
 async def join(ctx):
-    """Commande : /join -> Le joueur est ajouté à la liste des participants."""
+    """Commande : !join -> Le joueur est ajouté à la liste des participants."""
     if game.creator is None:
-        await ctx.send("❌ Aucune partie n'est créée. Quelqu'un doit faire `/creer_partie`.")
+        await ctx.send("❌ Aucune partie n'est créée. Quelqu'un doit faire `!creer_partie`.")
         return
         
     if ctx.author not in game.players:
@@ -148,9 +148,9 @@ async def join(ctx):
 
 @bot.command()
 async def start(ctx):
-    """Commande : /start -> Lance la partie (Réservé à l'administrateur)."""
+    """Commande : !start -> Lance la partie (Réservé à l'administrateur)."""
     if game.creator is None:
-        await ctx.send("❌ Créez d'abord une partie avec `/creer_partie`.")
+        await ctx.send("❌ Créez d'abord une partie avec `!creer_partie`.")
         return
     if ctx.author != game.creator:
         await ctx.send("❌ Seul le créateur de la partie peut la lancer !")
@@ -171,7 +171,7 @@ async def start(ctx):
 
 @bot.command()
 async def mission_reussie(ctx):
-    """Commande : /mission_reussie -> Déclare la mission complétée et ouvre le vote."""
+    """Commande : !mission_reussie -> Déclare la mission complétée et ouvre le vote."""
     if not game.active:
         await ctx.send("❌ La partie n'est pas en cours !")
         return
@@ -234,7 +234,7 @@ async def mission_reussie(ctx):
 
 @bot.command()
 async def score(ctx):
-    """Commande : /score -> Affiche le tableau des scores des joueurs de la partie."""
+    """Commande : !score -> Affiche le tableau des scores des joueurs de la partie."""
     if not game.players:
         await ctx.send("Il n'y a personne dans la partie pour le moment.")
         return
@@ -253,7 +253,7 @@ async def score(ctx):
 
 @bot.command()
 async def stop_mission(ctx):
-    """Commande : /stop_mission -> Coupe immédiatement la mission en cours sans point."""
+    """Commande : !stop_mission -> Coupe immédiatement la mission en cours sans point."""
     if ctx.author != game.creator:
         await ctx.send("❌ Seul le créateur de la partie peut faire cette commande.")
         return
@@ -265,7 +265,7 @@ async def stop_mission(ctx):
 
 @bot.command()
 async def restart_timer(ctx):
-    """Commande : /restart_timer -> Relance un timer propre de 10 minutes."""
+    """Commande : !restart_timer -> Relance un timer propre de 10 minutes."""
     if ctx.author != game.creator:
         await ctx.send("❌ Seul le créateur de la partie peut faire cette commande.")
         return
@@ -280,7 +280,7 @@ async def restart_timer(ctx):
 
 @bot.command()
 async def skip_mission(ctx):
-    """Commande : /skip_mission -> Annule la mission et passe la main à qqn d'autre."""
+    """Commande : !skip_mission -> Annule la mission et passe la main à qqn d'autre."""
     if ctx.author != game.creator:
         await ctx.send("❌ Seul le créateur de la partie peut faire cette commande.")
         return
