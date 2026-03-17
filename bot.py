@@ -22,8 +22,10 @@ class GameState:
         self.missions = []             # Liste des missions chargées depuis le CSV
         self.current_player = None     # Le joueur qui a accomplir la mission en cours
         self.current_mission = None    # Le texte de la mission en cours assignée
-        self.timer_task = None         # Tâche asynchrone pour le minuteur de 10 minutes assigné
+        self.timer_task = None         # Tâche asynchrone pour le minuteur de 5 minutes assigné
         self.channel = None            # Le salon textuel où se déroule la partie
+        # [MOD 3] Rotation équitable
+        self.played_this_cycle = []    # Joueurs ayant déjà joué dans le cycle actuel
         
 # Instance unique pour la partie
 game = GameState()
@@ -43,16 +45,23 @@ def load_missions(filename='missions.csv'):
 
 async def assign_new_mission(channel=None):
     """
-    Choisit un joueur aléatoire, lui attribue une mission 
-    et démarre le compteur de 10 minutes.
+    Choisit un joueur selon la rotation équitable, lui attribue une mission 
+    et démarre le compteur de 5 minutes.
     """
     if not game.active or not game.players:
         return
-        
-    # 1. Choisir un joueur au hasard
-    game.current_player = random.choice(game.players)
-    
-    # 2. Choisir une mission au hasard
+
+    # [MOD 3] Rotation équitable : si tout le monde a joué, on repart d'un nouveau cycle
+    remaining = [p for p in game.players if p not in game.played_this_cycle]
+    if not remaining:
+        game.played_this_cycle = []
+        remaining = list(game.players)
+
+    # Choisir un joueur parmi ceux qui n'ont pas encore joué ce cycle
+    game.current_player = random.choice(remaining)
+    game.played_this_cycle.append(game.current_player)
+
+    # Choisir une mission au hasard
     if game.missions:
         mission_data = random.choice(game.missions)
         game.current_mission = mission_data['Mission']
@@ -62,38 +71,37 @@ async def assign_new_mission(channel=None):
     target_channel = channel or game.channel
 
     if target_channel:
-        await target_channel.send(f"🎯 **Une nouvelle mission** a été attribuée à un joueur mystère... Il a le temps ! 10 minutes top chrono !")
+        await target_channel.send(f"🎯 **Une nouvelle mission** a été attribuée à un joueur mystère... Il a le temps ! 5 minutes top chrono !")
 
-    # 3. Envoyer la mission en message privé (DM) pour qu'elle reste secrète
+    # Envoyer la mission en message privé (DM) pour qu'elle reste secrète
     try:
         await game.current_player.send(
             f"🕵️ **NOUVELLE MISSION SECRÈTE** 🕵️\n"
             f"Votre mission : **{game.current_mission}**\n\n"
-            f"⏳ Vous avez **10 minutes** pour l'accomplir **discrètement** dans la vraie vie.\n"
+            f"⏳ Vous avez **5 minutes** pour l'accomplir **discrètement** dans la vraie vie.\n"
             f"Dès que vous avez réussi, tapez `!mission_reussie` dans le serveur !"
         )
     except discord.Forbidden:
         if target_channel:
             await target_channel.send(f"⚠️ **Attention !** Impossible d'envoyer un message privé à {game.current_player.mention}. L'utilisateur doit autoriser les messages privés depuis les paramètres du serveur !")
 
-    # 4. Annuler l'ancien timer s'il y en a un
+    # Annuler l'ancien timer s'il y en a un
     if game.timer_task:
         game.timer_task.cancel()
         
-    # 5. Démarrer automatique un timer de 10 minutes en tâche de fond
+    # Démarrer automatiquement un timer de 5 minutes en tâche de fond
     game.timer_task = bot.loop.create_task(mission_timer(target_channel))
 
 async def mission_timer(channel):
-    """Gère le chronomètre de 10 minutes pour une mission donnée."""
+    """Gère le chronomètre de 5 minutes pour une mission donnée."""
     try:
-        # Attendre 10 minutes (600 secondes)
-        await asyncio.sleep(600) 
+        # Attendre 5 minutes (300 secondes)
+        await asyncio.sleep(300)
         
-        # Si la tâche n'est pas annulée avant 10 minutes, c'est un échec temporel
+        # Si la tâche n'est pas annulée avant 5 minutes, c'est un échec temporel
         if game.active and channel:
             await channel.send(
-                f"⏳ **Temps écoulé !**\n"
-                f"La mission de {game.current_player.mention} a échoué car le délai de 10 minutes est dépassé !\n"
+                f"⏰ **Temps écoulé !** La mission de {game.current_player.mention} est terminée.\n"
                 f"Sa mission secrète était : *{game.current_mission}*"
             )
             await asyncio.sleep(2)
@@ -124,11 +132,12 @@ async def creer_partie(ctx):
     game.channel = ctx.channel
     game.players = [ctx.author] # Le créateur est automatiquement ajouté
     game.scores = {ctx.author.id: 0}
+    game.played_this_cycle = []  # [MOD 3] Reset de la rotation
     
     await ctx.send(
         f"🎮 **Nouvelle partie de Passe Solé créée !**\n"
         f"👑 {ctx.author.mention} est l'administrateur de la partie.\n"
-        f"👉 Rejoignez avec `!join`.\n"
+        f"👉 Rejoignez avec `!join` (15 joueurs maximum).\n"
         f"👉 L'administrateur lance la partie avec `!start`."
     )
 
@@ -138,11 +147,16 @@ async def join(ctx):
     if game.creator is None:
         await ctx.send("❌ Aucune partie n'est créée. Quelqu'un doit faire `!creer_partie`.")
         return
+
+    # [MOD 3] Limite de 15 joueurs
+    if len(game.players) >= 15:
+        await ctx.send(f"❌ La partie est complète ! Maximum 15 joueurs autorisés.")
+        return
         
     if ctx.author not in game.players:
         game.players.append(ctx.author)
         game.scores[ctx.author.id] = 0
-        await ctx.send(f"✅ {ctx.author.mention} a rejoint la partie ! ({len(game.players)} joueurs confirmés)")
+        await ctx.send(f"✅ {ctx.author.mention} a rejoint la partie ! ({len(game.players)}/15 joueurs confirmés)")
     else:
         await ctx.send(f"{ctx.author.mention}, vous êtes déjà dans la partie.")
 
@@ -164,6 +178,7 @@ async def start(ctx):
         await ctx.send("⚠️ Info : Le fichier `missions.csv` est vide ou introuvable. Une mission par défaut sera utilisée.")
 
     game.active = True
+    game.played_this_cycle = []  # [MOD 3] Reset de la rotation au lancement
     await ctx.send(f"🚀 **LA PARTIE COMMENCE !** 🚀\nNombre de joueurs participants : {len(game.players)}\nPréparation de la première mission...")
     
     await asyncio.sleep(2)
@@ -179,7 +194,7 @@ async def mission_reussie(ctx):
         await ctx.send("❌ Ce n'est pas à vous de faire ça, l'imposteur !")
         return
         
-    # Si la personne valide à temps, on arrête le compte à rebours de 10 minutes
+    # Si la personne valide à temps, on arrête le compte à rebours de 5 minutes
     if game.timer_task:
         game.timer_task.cancel()
         
@@ -233,6 +248,33 @@ async def mission_reussie(ctx):
     await assign_new_mission(channel=ctx.channel)
 
 @bot.command()
+async def quit(ctx):
+    """Commande : !quit -> Le joueur abandonne sa mission en cours et perd 1 point."""
+    if not game.active:
+        await ctx.send("❌ La partie n'est pas en cours !")
+        return
+
+    # [MOD 2] Vérifier que c'est bien le tour de ce joueur
+    if ctx.author != game.current_player:
+        await ctx.send("Ce n'est pas ton tour.")
+        return
+
+    # Annuler le timer en cours
+    if game.timer_task:
+        game.timer_task.cancel()
+
+    # Retirer 1 point (peut aller en négatif)
+    game.scores[ctx.author.id] -= 1
+
+    await ctx.send(
+        f"❌ {ctx.author.mention} a abandonné sa mission et perd 1 point.\n"
+        f"*(Score actuel : {game.scores[ctx.author.id]} point(s))*"
+    )
+
+    await asyncio.sleep(2)
+    await assign_new_mission(channel=ctx.channel)
+
+@bot.command()
 async def score(ctx):
     """Commande : !score -> Affiche le tableau des scores des joueurs de la partie."""
     if not game.players:
@@ -265,7 +307,7 @@ async def stop_mission(ctx):
 
 @bot.command()
 async def restart_timer(ctx):
-    """Commande : !restart_timer -> Relance un timer propre de 10 minutes."""
+    """Commande : !restart_timer -> Relance un timer propre de 5 minutes."""
     if ctx.author != game.creator:
         await ctx.send("❌ Seul le créateur de la partie peut faire cette commande.")
         return
@@ -276,7 +318,7 @@ async def restart_timer(ctx):
         game.timer_task.cancel()
         
     game.timer_task = bot.loop.create_task(mission_timer(ctx.channel))
-    await ctx.send("⏱️ Le timer de 10 minutes a été relancé de zéro pour le joueur actif !")
+    await ctx.send("⏱️ Le timer de 5 minutes a été relancé de zéro pour le joueur actif !")
 
 @bot.command()
 async def skip_mission(ctx):
