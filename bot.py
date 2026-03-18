@@ -22,7 +22,7 @@ class GameState:
         self.missions = []             # Liste des missions chargées depuis le CSV
         self.current_player = None     # Le joueur qui a accomplir la mission en cours
         self.current_mission = None    # Le texte de la mission en cours assignée
-        self.timer_task = None         # Tâche asynchrone pour le minuteur de 5 minutes assigné
+        self.timer_task = None         # Tâche asynchrone pour le minuteur assigné
         self.channel = None            # Le salon textuel où se déroule la partie
         # Rotation équitable
         self.played_this_cycle = []    # Joueurs ayant déjà joué dans le cycle actuel
@@ -102,7 +102,7 @@ async def mission_timer(channel):
         # Si la tâche n'est pas annulée avant 5 minutes, c'est un échec temporel
         if game.active and channel and game.current_player:
             await channel.send(
-                f"⏰ Temps écoulé ! La mission de {game.current_player.mention} est terminée.\n"
+                f"⏰ **Temps écoulé !** La mission de {game.current_player.mention} est terminée.\n"
                 f"Sa mission secrète était : *{game.current_mission}*"
             )
             await asyncio.sleep(2)
@@ -203,7 +203,7 @@ async def mission_reussie(ctx):
     # Envoi du message pour lancer les votes
     poll_msg = await ctx.send(
         f"📢 Mission de {ctx.author.mention} terminée.\n\n"
-        f"Sa mission secrète était de de : **{game.current_mission}**\n\n"
+        f"Sa mission secrète était : **{game.current_mission}**\n\n"
         "Votez pour confirmer si la mission a été bien exécutée (et si vous l'avez bien vu) !\n"
         "Réactions :\n"
         "✅ = mission réussie\n"
@@ -257,7 +257,7 @@ async def quit(ctx):
         return
 
     if ctx.author != game.current_player:
-        await ctx.send("Ce n'est pas ton tour.")
+        await ctx.send("❌ Ce n'est pas ton tour.")
         return
 
     if game.timer_task:
@@ -273,69 +273,46 @@ async def quit(ctx):
     await asyncio.sleep(2)
     await assign_new_mission(channel=ctx.channel)
 
-@bot.command()
-async def abandon(ctx):
-    """Un joueur quitte la partie en cours sans arrêter le jeu."""
-    if not game.active:
-        await ctx.send("❌ La partie n'est pas en cours !")
+@bot.command(name="abandon")
+async def abandon_game(ctx):
+    """Un joueur quitte la partie/le lobby."""
+    if game.creator is None:
+        await ctx.send("❌ Aucune partie n'est créée !")
         return
 
     if ctx.author not in game.players:
-        await ctx.send("Tu n'es pas dans la partie.")
+        await ctx.send("❌ Tu n'es pas dans la partie.")
         return
 
-    # Si c'est l'admin qui abandonne
-    if ctx.author == game.creator:
-        # Retirer l'admin de la liste des joueurs
-        if ctx.author in game.players:
-            game.players.remove(ctx.author)
-
-        # Choisir le nouveau créateur = le joueur qui est venu en premier (index 0)
-        if game.players:
-            game.creator = game.players[0]
-            await ctx.send(
-                f"👑 {ctx.author.mention} a quitté la partie. "
-                f"{game.creator.mention} est maintenant l'administrateur."
-            )
-        else:
-            # Plus aucun joueur, on reset proprement
-            game.creator = None
-            game.active = False
-            game.current_player = None
-            game.current_mission = None
-            if game.timer_task:
-                game.timer_task.cancel()
-            await ctx.send("Tous les joueurs ont quitté la partie. La partie est arrêtée.")
-        return
-
-    # Ici, c'est un joueur normal qui abandonne
-    # Si c'est le joueur actuellement en mission
-    if ctx.author == game.current_player:
-        # Annuler le timer
+    was_current_player = (ctx.author == game.current_player)
+    
+    if was_current_player and game.timer_task:
+        game.timer_task.cancel()
+            
+    game.players.remove(ctx.author)
+    
+    if not game.players:
+        game.creator = None
+        game.active = False
+        game.current_player = None
+        game.current_mission = None
         if game.timer_task:
             game.timer_task.cancel()
+        await ctx.send("🚪 Tous les joueurs ont quitté. La partie est annulée/arrêtée.")
+        return
 
-        # Le retirer des joueurs
-        if ctx.author in game.players:
-            game.players.remove(ctx.author)
+    if ctx.author == game.creator:
+        game.creator = game.players[0]
+        await ctx.send(
+            f"👑 {ctx.author.mention} a quitté.\n"
+            f"👉 {game.creator.mention} est maintenant l'administrateur."
+        )
+    else:
+        await ctx.send(f"🚪 {ctx.author.mention} a quitté.")
 
-        await ctx.send(f"🚪 {ctx.author.mention} a abandonné la partie.")
-        # Si plus de joueurs, on stoppe tout
-        if not game.players:
-            game.active = False
-            game.current_player = None
-            game.current_mission = None
-            await ctx.send("Il n'y a plus de joueurs. La partie se termine.")
-            return
-
-        # Sinon on passe au joueur suivant avec une nouvelle mission
+    if was_current_player and game.active:
         await asyncio.sleep(2)
         await assign_new_mission(channel=ctx.channel)
-    else:
-        # Pas le joueur en mission, il sort de la partie sans impacter la mission
-        if ctx.author in game.players:
-            game.players.remove(ctx.author)
-        await ctx.send(f"🚪 {ctx.author.mention} a quitté la partie.")
 
 @bot.command()
 async def score(ctx):
@@ -451,4 +428,4 @@ async def help_passe(ctx):
 
 # -- LANCEMENT DU BOT --
 # Remplacer cette valeur par le token de votre propre bot depuis le panel développeur de Discord
-bot.run("VOTRE_TOKEN_DISCORD_ICI")
+bot.run("MTQ4MzIxODM5MDc3OTk1MzM5Mg.GWs7E9.dT3MsHIQeLsDpg4L5xDMDAe7tkxvaxArBohHVU")
