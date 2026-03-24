@@ -39,6 +39,8 @@ class Game:
         self.turn_order = []       # ordre aléatoire des joueurs
         self.turn_index = 0        # index du joueur courant
 
+        self.tasks = []            # liste des asyncio.Task (timers des missions)
+
 
 def load_scores():
     if os.path.exists(scores_file):
@@ -117,6 +119,11 @@ async def quit(ctx):
             for idx, (pid, score) in enumerate(game_scores, 1):
                 leaderboard += f"{idx}. <@{pid}> : {score} points\n"
             await ctx.send(leaderboard)
+
+        # annule tous les timers encore actifs
+        for task in game.tasks:
+            if not task.done():
+                task.cancel()
 
         del games[ctx.channel.id]
     else:
@@ -229,7 +236,10 @@ async def lancer_mission(ctx):
         await ctx.send("Il n'y a plus de missions disponibles dans cette partie !")
         return
 
+    # mission aléatoire sans répétition
     mission = random.choice(game.missions)
+    game.missions.remove(mission)
+
     text = f"{mission['Mission']} (Difficulté: {mission['Difficulte']})"
 
     mission_state = MissionState(text, ctx.author.display_name)
@@ -243,22 +253,27 @@ async def lancer_mission(ctx):
 
     async def timer_task():
         await asyncio.sleep(300)
-        if hasattr(game, 'active_missions') and ctx.author.id in game.active_missions:
-            m = game.active_missions[ctx.author.id]
+        if ctx.channel.id not in games:
+            return
+        game_local = games[ctx.channel.id]
+        if hasattr(game_local, 'active_missions') and ctx.author.id in game_local.active_missions:
+            m = game_local.active_missions[ctx.author.id]
             if m == mission_state:
-                del game.active_missions[ctx.author.id]
+                del game_local.active_missions[ctx.author.id]
                 update_score(ctx.author.id, -1)
                 await ctx.send(
                     f"⏳ **Temps écoulé pour {ctx.author.mention} !**\n"
                     f"La mission n'a pas été validée à temps. Pénalité: -1 point."
                 )
-                game.turn_index = (game.turn_index + 1) % len(game.turn_order)
+                game_local.turn_index = (game_local.turn_index + 1) % len(game_local.turn_order)
                 await ctx.send(
-                    f"C'est maintenant au tour de <@{game.turn_order[game.turn_index]}> "
+                    f"C'est maintenant au tour de <@{game_local.turn_order[game_local.turn_index]}> "
                     f"de faire `!lancer_mission`."
                 )
 
-    mission_state.timer_task = bot.loop.create_task(timer_task())
+    task = bot.loop.create_task(timer_task())
+    mission_state.timer_task = task
+    game.tasks.append(task)
 
 
 @bot.command()
@@ -324,11 +339,12 @@ async def mission_reussie(ctx):
             f"(-1 point) ❌ ({yes_votes} oui, {no_votes} non)"
         )
 
-    game.turn_index = (game.turn_index + 1) % len(game.turn_order)
-    await ctx.send(
-        f"C'est maintenant au tour de <@{game.turn_order[game.turn_index]}> "
-        f"de faire `!lancer_mission`."
-    )
+    if ctx.channel.id in games and games[ctx.channel.id].turn_order:
+        game.turn_index = (game.turn_index + 1) % len(game.turn_order)
+        await ctx.send(
+            f"C'est maintenant au tour de <@{game.turn_order[game.turn_index]}> "
+            f"de faire `!lancer_mission`."
+        )
 
 
 @bot.command()
@@ -347,11 +363,12 @@ async def abandon(ctx):
     update_score(ctx.author.id, -1)
     await ctx.send(f"🏳️ {ctx.author.mention} a abandonné sa mission. (-1 point)")
 
-    game.turn_index = (game.turn_index + 1) % len(game.turn_order)
-    await ctx.send(
-        f"C'est maintenant au tour de <@{game.turn_order[game.turn_index]}> "
-        f"de faire `!lancer_mission`."
-    )
+    if game.turn_order:
+        game.turn_index = (game.turn_index + 1) % len(game.turn_order)
+        await ctx.send(
+            f"C'est maintenant au tour de <@{game.turn_order[game.turn_index]}> "
+            f"de faire `!lancer_mission`."
+        )
 
 
 @bot.command()
